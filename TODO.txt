@@ -1,0 +1,8 @@
+manifest:
+	icons
+
+
+Browser action showing last sent links? Storage db
+
+
+If you need to keep runtime state in memory throughout a browser session, use the storage API or IndexedDB. Since the event page does not stay loaded for long, you can no longer rely on global variables for runtime state.
