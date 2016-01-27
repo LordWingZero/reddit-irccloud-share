@@ -4,9 +4,14 @@
    "version":"1",
    "manifest_version":2,
    "author":"Victorio Berra",
+   "icons": {
+   		"16": "images/share/16_share.png",
+	    "48": "images/share/48_share.png",
+        "128": "images/share/128_share.png"
+  	},
    "background":{
       "scripts":[
-      	"js/lodash.core.min.js",
+      	"js/vendor/lodash.min.js",      	
     	"js/eventPage.js"
       ],
       "persistent":true
@@ -15,6 +20,7 @@
       "default_title":"Reddit IRCCLoud Share",
       "default_popup":"html/popup.html"
    },
+   "options_page": "html/options.html",
    "content_scripts":[
       {
          "matches":[
@@ -22,7 +28,8 @@
             "https://www.reddit.com/*"
          ],
          "js":[
-            "js/jquery-2.2.0.min.js",            
+            "js/vendor/jquery-2.2.0.min.js",       
+            "js/vendor/lodash.min.js",      
             "js/reddit.js"
          ]
       }
