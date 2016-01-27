@@ -6,7 +6,8 @@
    "author":"Victorio Berra",
    "background":{
       "scripts":[
-         "js/eventPage.js"
+      	"js/lodash.core.min.js",
+    	"js/eventPage.js"
       ],
       "persistent":true
    },

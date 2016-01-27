@@ -1,47 +1,77 @@
 var _reqid = 0;
-var retryMax = 4;
+
+var retryMax = 10;
 var retryCount = 1;
-const connectionError = 'Error connecting to IRCCloud.\nOpen https://www.irccloud.com/ and login.';
-var globalIRCCloudList;
 
-// Kickoff
-initConnection(42);
+const connectionError = 'Error connecting to IRCCloud.\nOpen https://www.irccloud.com/ and make sure you are logged in.';
 
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {	
-    //_reqid++;
-    switch(request.type){
-    	case 'get_cloudlist':    		
-    		sendResponse({list: globalIRCCloudList});    		
-    		break;
-		case 'send':
-    		break;
+var ws;
+
+chrome.runtime.onMessage.addListener(redditListener);
+
+function redditListener(request, sender, sendResponse) {   
+    _reqid++;
+
+    if(request.type === 'get_cloudlist'){
+        sendResponse({list: JSON.parse(localStorage.getItem('conn_buff_list'))});
+        return;
     }
-});
 
-function initConnection(Cookie) {	
+    if(request.type === 'send'){
+
+        var payload = {
+             "_reqid":_reqid,
+             "_method":"say",
+             "cid":request.cid,
+             "to":request.name,
+             "msg":request.message
+         };
+        
+       ws.send(JSON.stringify(payload));            
+
+        sendResponse(); // successful send
+
+        return;
+    }
+
+}
+
+(function initConnection() {	
     if ("WebSocket" in window) {
 
-		// DEBUG
-        // replace window. with var
-        var rws = new WebSocket("wss://www.irccloud.com/");
+        // Build the query string for since_id an stream_id (reconnect)
+        var qs = buildSocketQueryString(localStorage.getItem('highest_since_id'), localStorage.getItem('stream_id'));
+
+        var rws = new WebSocket("wss://www.irccloud.com/?" + qs);
 
         rws.onopen = function()
         {
-           console.log('Starting websocket connection.'); // DEBUG
+            ws = rws;
+           console.debug('Starting websocket connection.');
         };
 
-        rws.onmessage = function(evt) {        	
+        rws.onmessage = function(evt) {     
+            console.log(evt)   	
+
             var cloudEvent = JSON.parse(evt.data);            
 
         	if(cloudEvent.success === false && cloudEvent.message === "auth"){
-        		// We need to change the button icon, and then have the user login again
-    			alert(connectionError);
+        		// TODO: change the button icon, and then have the user login again
+    			alert('1: ' + connectionError);
         	}
+
+            if(cloudEvent.eid && cloudEvent.eid > 0){
+                localStorage.setItem('highest_since_id', cloudEvent.eid);                    
+            }
 
             switch (cloudEvent.type) {
             	case 'header':
-            		// console.log(evt);
-            		break;
+                    localStorage.setItem('stream_id', cloudEvent.streamid);
+            		if(cloudEvent.resumed){
+                        retryCount++;
+                        console.debug('We missed ' + cloudEvent.accrued + ' events.');
+                    }                    
+            		break;             
                 case 'oob_include':                	
                     var options = {
                         credentials: 'include'
@@ -51,17 +81,22 @@ function initConnection(Cookie) {
                         .then(parseJSON)
                         .then(normalizeBacklog)
                         .then(function(friendlyData) {
-                        	console.log('Setting global list.');
-                        	console.log(friendlyData);
-                            globalIRCCloudList = friendlyData;
+                        	console.log('Setting global list.');                        	                        
+                            localStorage.setItem('conn_buff_list', JSON.stringify(friendlyData));
+                            console.log(JSON.parse(localStorage.getItem('conn_buff_list')));
                             console.log('done.');
                         })
                         .catch(function(error) {
-                            alert(connectionError);
+                            console.error(error);                            
                         });
                     break;
-                case 'channel_init':
-                // https://github.com/irccloud/irccloud-tools/wiki/API-Stream-Message-Reference#channel_init
+                case 'makeserver':
+                    break;
+                case 'makebuffer':
+                    break;
+                case 'deletebuffer':
+                    break;                    
+                case 'channel_init':                
                 	break;
                 case 'you_parted_channel':
                 	break;
@@ -76,25 +111,30 @@ function initConnection(Cookie) {
                 	if(cloudEvent === 'disconnected'){
                 		// Remove server from backlog cache
                 	}
-                	break;                     	
-            }
+                	break;                     	                
+            }            
+            
         };
 
         rws.onclose = function(evt) {        	
-            // websocket is closed.
-            retryCount++;
+            // websocket is closed.            
+            console.warn('CLOSED. Count: ' + retryCount + ' retrying in ' + ((2000 * (retryCount * 2)) / 1000) + ' seconds.');
             if(retryCount !== retryMax){
-            	setTimeout(function(){initConnection(Cookie)}, 5000 * (retryCount * 2));
-        	}
+            	setTimeout(function(){initConnection()}, 2000 * (retryCount * 2));
+        	} else {
+                // todo, page?
+                alert('Max retry count reached. Unable to connect to IRCCloud');
+            }            
         };
 
         rws.onerror = function(evt) {
-            alert(connectionError);
+            console.error(evt);            
         };
 
-    }
-
-}
+    } else {
+        throw Error('Websockets are required to use reddit-irccloud-share');
+    }    
+})();
 
 function normalizeBacklog(backlogData){
 	var response = {};
@@ -107,24 +147,42 @@ function normalizeBacklog(backlogData){
                 buffers: []
             };
         }
-        if (currentValue.type === "makebuffer") {
-        	if(currentValue.name !== '*'){
+        if (currentValue.type === "makebuffer") {            
+        	if(currentValue.buffer_type !== 'console'){
 	            response[currentValue.cid].buffers.push({
 	                name: currentValue.name,
 	                bid: currentValue.bid,
 	                archive: currentValue.archived
 	            });
             }
-        }
-	});
+        }        
+	});    
+    for(cid in response){
+        response[cid].buffers = _.sortBy(response[cid].buffers, function(o) { return o.name; });
+    }
     return response;
 }
 
-function getSessionKey(cb){
-	chrome.cookies.get({
-        url: 'https://www.irccloud.com/',
-        name: 'session'
-    }, cb);
+function buildSocketQueryString(highestSinceId, streamId){
+
+    var qs = "";
+    if(highestSinceId){
+        qs += 'since_id=' + highestSinceId;
+    }
+    if(streamId){
+        if(highestSinceId !== 0){
+            qs +='&';
+        }
+        qs += 'stream_id=' + streamId;
+    }
+
+    // If we lose our global list, we re-fetch full buffe
+    if(!localStorage.getItem('conn_buff_list')){
+        console.debug('Buffer history missing. Refretching full buffer.');
+        qs = '';
+    }
+
+    return qs;
 }
 
 function checkStatus(response) {	
