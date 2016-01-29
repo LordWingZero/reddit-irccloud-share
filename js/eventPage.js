@@ -9,6 +9,8 @@ var ws;
 
 chrome.runtime.onMessage.addListener(redditListener);
 
+initConnection();
+
 function redditListener(request, sender, sendResponse) {
     _reqid++;
 
@@ -51,9 +53,14 @@ function redditListener(request, sender, sendResponse) {
         return true;
     }
 
+    if (request.type === 'reconnect') {
+        initConnection();
+        sendResponse(); // successful reconnect
+    }
+
 }
 
-(function initConnection() {
+function initConnection() {
     if ("WebSocket" in window) {
 
         // Build the query string for since_id an stream_id (reconnect)
@@ -64,7 +71,7 @@ function redditListener(request, sender, sendResponse) {
                     var rws = new WebSocket("wss://www.irccloud.com/?" + qs);
 
                     rws.onopen = function() {
-                        ws = rws;
+                        ws = rws;                        
                         console.debug('connection opened.');
                     };
 
@@ -72,11 +79,12 @@ function redditListener(request, sender, sendResponse) {
                         console.log(evt)
 
                         var cloudEvent = JSON.parse(evt.data);
-
                         if (cloudEvent.success === false && cloudEvent.message === "auth") {
                             // TODO: change the button icon, and then have the user login again
-                            // chrome.browserAction.setIcon({path:"icon" + current + ".png"});
+                            chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
                             alert('1: ' + connectionError);
+                        } else {
+                            chrome.browserAction.setIcon({path:"./images/share/blue/16_share.png"});
                         }
 
                         if (cloudEvent.eid && cloudEvent.eid > 0) {
@@ -104,7 +112,7 @@ function redditListener(request, sender, sendResponse) {
                                     .then(parseJSON)
                                     .then(normalizeBacklog)
                                     .then(function(friendlyData) {
-                                        console.log('Setting global list for the first time.');
+                                        console.log('Setting global list for the first time.');                                        
                                         chrome.storage.local.set({
                                             'conn_buff_list': friendlyData
                                         });
@@ -114,24 +122,52 @@ function redditListener(request, sender, sendResponse) {
                                     });
                                 break;
                             case 'makeserver':
+                                // new connection
+                                // if channel, joined == false
                                 break;
                             case 'makebuffer':
+                                // channels/PMs created
                                 break;
-                            case 'deletebuffer':
+
+                            case 'delete_buffer':
+                                // channel, user, console deleted.
+                                chrome.storage.local.get('conn_buff_list', function(bufferHistory) {
+                                    _.each(bufferHistory, function(connection){
+                                        connection.buffers = connection.buffer.filter(function(buffer){
+                                            return (buffer.cid === cloudEvent.cid && buffer.bid === cloudEvent.bid);
+                                        });
+                                    });
+                                    chrome.storage.local.set({
+                                        'conn_buff_list': newBufferList
+                                    });
+                                });
                                 break;
+
                             case 'channel_init':
+                                // Loop through all buffers and set joined == true
+                               chrome.storage.local.get('conn_buff_list', function(bufferHistory) {
+                                    _.each(bufferHistory, function(connection){
+                                        connection.buffer.forEach(function(buffer){
+                                            if(buffer.cid === cloudEvent.cid && buffer.bid === cloudEvent.bid){
+                                                buffer.joined = true;
+                                            }
+                                        });
+                                    });
+                                    chrome.storage.local.set({
+                                        'conn_buff_list': newBufferList
+                                    });
+                                });
                                 break;
                             case 'you_parted_channel':
                                 break;
                             case 'you_kicked_channel':
                                 break;
-                            case 'quit':
-                                break;
-                            case 'status_changed':
-                                if (cloudEvent === 'connected') {
+
+                            case 'status_changed':                                                      
+                                if (cloudEvent.new_status === 'connected') {
                                     // Add server to backlog cache
                                 }
-                                if (cloudEvent === 'disconnected') {
+                                if (cloudEvent.new_status === 'disconnected') {
                                     // Remove server from backlog cache
                                 }
                                 break;
@@ -144,15 +180,16 @@ function redditListener(request, sender, sendResponse) {
                         console.warn('CLOSED. Count: ' + retryCount + ' retrying in ' + ((2000 * (retryCount * 2)) / 1000) + ' seconds.');
                         if (retryCount !== retryMax) {
                             setTimeout(function() {
-                                initConnection()
+                                initConnection();
                             }, 2000 * (retryCount * 2));
                         } else {
-                            // todo, page?
-                            alert('Max retry count reached. Unable to connect to IRCCloud');
+                            chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
+                            console.debug('Max retry count reached. Unable to connect to IRCCloud');
                         }
                     };
 
                     rws.onerror = function(evt) {
+                        chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});                        
                         console.error(evt);
                     };
                 });
@@ -162,9 +199,9 @@ function redditListener(request, sender, sendResponse) {
     } else {
         throw Error('Websockets are required to use reddit-irccloud-share');
     }
-})();
+}
 
-function normalizeBacklog(backlogData) {
+function normalizeBacklog(backlogData) {    
     var response = {};
     backlogData.forEach(function(currentValue, index, array) {
         if (currentValue.type === "makeserver") {
@@ -177,11 +214,18 @@ function normalizeBacklog(backlogData) {
         }
         if (currentValue.type === "makebuffer") {
             if (currentValue.buffer_type !== 'console') {
-                response[currentValue.cid].buffers.push({
+                var newBuffer = {
                     name: currentValue.name,
                     bid: currentValue.bid,
-                    archive: currentValue.archived
-                });
+                    archived: currentValue.archived,
+                    buffer_type: currentValue.buffer_type                    
+                };
+
+                if(currentValue.buffer_type === 'channel'){                    
+                    newBuffer.joined = false;
+                }
+
+                response[currentValue.cid].buffers.push(newBuffer);
             }
         }
     });
@@ -190,6 +234,7 @@ function normalizeBacklog(backlogData) {
             return o.name;
         });
     }
+    console.log(response);
     return response;
 }
 

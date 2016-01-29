@@ -3,7 +3,7 @@ function loadRules() {
         if (options.dialogOpts) {
             document.getElementById('formatTxt').value = options.dialogOpts.format;
         } else {
-            document.getElementById('formatTxt').value = '%title% - %url%';
+            document.getElementById('formatTxt').value = '"%title%" %url%';
         }
     });
 }
@@ -24,9 +24,23 @@ function save() {
     });
 }
 
+function clear() {
+    var confirm = window.confirm('CAUTION\nAre you sure you want to purge out all data for this extenion?');
+    if (confirm) {
+         chrome.storage.local.clear(function() {
+			chrome.runtime.sendMessage({type: "reconnect"}, function(response) {
+				document.getElementById('notifyLbl').innerHTML = 'All data cleared! - ' + new Date();
+			});	        
+	    });   
+    }
+}
+
 window.onload = function() {
     loadRules();
     document.getElementById('saveBtn').onclick = function() {
         save();
     };
+    document.getElementById('clearBtn').onclick = function() {
+        clear();
+    };    
 }

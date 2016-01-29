@@ -1,8 +1,13 @@
+attachButtons();
+
+registerNeverEndingRediitListener();
+
+
 // Handle share button click
 function handleShareClick() {
     var self = this;
 
-    var titleDiv = $(self).closest('.title').find('a.title');
+    var titleDiv = $(self).closest('.entry').find('a.title');
     var title = titleDiv.text();
     var URL = titleDiv.attr('href');
 
@@ -10,7 +15,7 @@ function handleShareClick() {
         URL = ('https://www.reddit.com' + URL);
     }
 
-    var message = title + ' - ' + URL;
+    var message = '"' + title + '" ' + URL;
 
     chrome.storage.local.get('dialogOpts', function(options) {
         chrome.storage.local.get('history', function(history) {
@@ -19,6 +24,12 @@ function handleShareClick() {
                 message = options.dialogOpts.format.replace('%title%', title).replace('%url%', URL);
             }
 
+            // Some titles have quotes already
+            if(title[0] === '"' && title[title.length -1] === '"'){
+                message = message.replace(/\"\"/g, '"');
+            }
+
+            // Clicking the share button again will "close" the closest existing dialog
             var existingShareDialogs = $(self).closest('.entry').children('.reddit-irccloud-share');
             if (existingShareDialogs.length !== 0) {
                 removeAndDestroy(existingShareDialogs);
@@ -139,11 +150,37 @@ function buildShareDialog(sentHistory, bufferHistory, message) {
     return shareDialog;
 }
 
-// Create share button
-const redditIRCCLoudShareBtn = $('<li class="irccloud"><a>share-irccloud</a></li>');
+function attachButtons(){
+    
+    var buttonMenus = $('.link').find('.buttons');
 
-// Attache event handler
-redditIRCCLoudShareBtn.on('click', handleShareClick);
+    buttonMenus = buttonMenus.filter(function(index, element){          
+        return ($(element).children('.irccloud').length === 0);
+    });
 
-// Append to DOM
-var buttonMenu = $('.buttons').append(redditIRCCLoudShareBtn);
+    // Create share button
+    const redditIRCCLoudShareBtn = $('<li class="irccloud"><a>share-irccloud</a></li>');
+
+    // Attach event handler
+    redditIRCCLoudShareBtn.on('click', handleShareClick);
+
+    buttonMenus.append(redditIRCCLoudShareBtn);
+
+}
+
+function registerNeverEndingRediitListener(){
+    window.addEventListener("message", function(event) {
+      // We only accept messages from ourselves
+      if (event.source != window)
+        return;
+
+      if (event.data.type && (event.data.type == "neverEndingLoaded")) {    
+        attachButtons();
+      }
+    }, false);
+
+    var elt = document.createElement("script");
+    elt.innerHTML = "window.addEventListener('neverEndingLoaded', function(){ window.postMessage({ type: 'neverEndingLoaded' }, '*'); });"
+    elt.setAttribute('type', 'text/javascript');
+    document.head.appendChild(elt);
+}
