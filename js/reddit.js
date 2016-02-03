@@ -1,6 +1,6 @@
 attachButtons();
 
-registerNeverEndingRediitListener();
+registerNeverEndingRedditListener();
 
 
 // Handle share button click
@@ -40,7 +40,7 @@ function handleShareClick() {
                 type: 'get_cloudlist'
             }, function(response) {
 
-                var shareDialog = buildShareDialog(history, response, message);
+                var shareDialog = buildShareDialog(history, response, message, options.dialogOpts);
 
                 // Events
                 shareDialog
@@ -99,15 +99,22 @@ function removeAndDestroy(element) {
     element.remove();
 }
 
-function buildShareDialog(sentHistory, bufferHistory, message) {
-
+function buildShareDialog(sentHistory, bufferHistory, message, options) {
     var select = $('<select id="connectionSelBox" class="c-form-control"></select>');
-    for (cid in bufferHistory.list) {
-        var li = $('<optgroup value="' + cid + '" label="' + bufferHistory.list[cid].name + '"></optgroup>');
-        bufferHistory.list[cid].buffers.forEach(function(buffer) {
-            li.append('<option value="' + buffer.bid + '">' + buffer.name + '</option>');
-        });
-        select.append(li);
+    for (cid in bufferHistory.list) {    
+        console.log(bufferHistory.list[cid].status);
+        if(bufferHistory.list[cid].status === 'connected_ready'){
+            var li = $('<optgroup value="' + cid + '" label="' + bufferHistory.list[cid].name + '"></optgroup>');
+            bufferHistory.list[cid].buffers.forEach(function(buffer) {
+                if(options && options.hideArchived && buffer.archived === true){
+                    return;            
+                }
+                if((buffer.buffer_type === 'channel' && buffer.joined == true) || (buffer.buffer_type === 'conversation')){
+                    li.append('<option value="' + buffer.bid + '">' + buffer.name + '</option>');
+                }        
+            });
+            select.append(li);    
+        }    
     };
 
     if (sentHistory.history) {
@@ -151,7 +158,7 @@ function buildShareDialog(sentHistory, bufferHistory, message) {
 }
 
 function attachButtons(){
-    
+
     var buttonMenus = $('.link').find('.buttons');
 
     buttonMenus = buttonMenus.filter(function(index, element){          
@@ -168,7 +175,7 @@ function attachButtons(){
 
 }
 
-function registerNeverEndingRediitListener(){
+function registerNeverEndingRedditListener(){
     window.addEventListener("message", function(event) {
       // We only accept messages from ourselves
       if (event.source != window)

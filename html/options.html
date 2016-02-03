@@ -1,20 +1,24 @@
 <!doctype html>
 <html>
 <head>
-<title>Download Filename Controller</title>
+<style>
+	.main{
+		margin-left: 20px;
+		margin-right: 20px;
+	}	
+</style>
 <script src="../js/options.js"></script>
 <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet" integrity="sha256-7s5uDGW3AHqw6xtJmNNtr+OBRJUlgkNJEo78P4b0yRw= sha512-nNo+yCHEyn0smMxSswnf/OnX6/KwJuZTlNZBjauKhTK0c+zT+q5JOCx0UFhXQ6rJR9jg6Es8gPuD2uZcYDLqSw==" crossorigin="anonymous">
 </head>
-<body>
-	<h1>Reddit IRCCloud Share Settings</h1>
+<body>	
 	<label id="notifyLbl"></label>	
-	<div class="content">
+	<div class="content main">
 		<div class="row">
 			<div class="col-md-6">
 				<div class="panel panel-default">
 				  	<div class="panel-heading">
 						<div class="panel-title">
-							Formatting
+							<span class="glyphicon glyphicon-pencil"></span> Formatting
 						</div>				  		
 				  	</div>
 				  <div class="panel-body">
@@ -22,6 +26,9 @@
 						<label>Format (Vars: %title% and %url%):</label>
 						<input id="formatTxt" type="text" class="form-control" placeholder="%title% - %url%"/>	
 					</div>				    
+					<div class="form-group">
+						<label><input id="hideArchivedCb" type="checkbox" value="false"/> hide archived</label>						
+					</div>						
 					<div class="form-group">
 						<button id="saveBtn" class="btn btn-xs btn-primary" >Save</button>
 					</div>
@@ -31,10 +38,10 @@
 		</div>	
 		<div class="row">
 			<div class="col-md-6">
-				<div class="panel panel-default">
+				<div class="panel panel-warning">
 				  	<div class="panel-heading">
 						<div class="panel-title">
-							Debugging
+							<span class="glyphicon glyphicon-wrench"></span> Debugging
 						</div>				  		
 				  	</div>
 				  <div class="panel-body">	    

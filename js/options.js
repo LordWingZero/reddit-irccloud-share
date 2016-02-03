@@ -2,6 +2,7 @@ function loadRules() {
     chrome.storage.local.get('dialogOpts', function(options) {
         if (options.dialogOpts) {
             document.getElementById('formatTxt').value = options.dialogOpts.format;
+            document.getElementById('hideArchivedCb').checked = options.dialogOpts.hideArchived;
         } else {
             document.getElementById('formatTxt').value = '"%title%" %url%';
         }
@@ -10,6 +11,7 @@ function loadRules() {
 
 function save() {
     var format = document.getElementById('formatTxt').value;
+    var hideArchived = document.getElementById('hideArchivedCb').checked;
 
     if (!format) {
         alert('Format cannot be empty!');
@@ -17,7 +19,8 @@ function save() {
 
     chrome.storage.local.set({
         'dialogOpts': {
-            "format": format
+            "format": format,
+            "hideArchived": hideArchived
         }
     }, function() {
         document.getElementById('notifyLbl').innerHTML = 'Saved! - ' + new Date();

@@ -15,7 +15,17 @@
     		border-left:6px solid #729FDB;
     		background-color: #DCEAFC;
     		margin-bottom: 6px;
-    		padding-left: 4px;	
+    		padding-left: 4px;
+    		border-radius: 4px;
+    	}
+    	#error{
+    		border-left:6px solid #990000;
+    		color: #990000;
+    		background-color: #ffb3b3;
+			border-radius: 4px;
+			padding-left: 4px;
+			padding-right: 4px;
+    		text-align: center;
     	}
     </style>
     <link href='https://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
@@ -23,8 +33,9 @@
     <script src="../js/popup.js"></script>
   </head>
   <body>
+  	  <h4 id="error"></h4>
 	  <h3>Recently Sent</h3>
-	  <hr/>
 	  <ul id="recentlySent"></ul>
+	  <a id="optionsLink" href="#">options</a>
   </body>
 </html>

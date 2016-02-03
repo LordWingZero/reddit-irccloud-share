@@ -1,7 +1,7 @@
 var _reqid = 0;
-
 var retryMax = 10;
 var retryCount = 1;
+var error = '';
 
 const connectionError = 'Error connecting to IRCCloud.\nOpen https://www.irccloud.com/ and make sure you are logged in.';
 
@@ -21,6 +21,10 @@ function redditListener(request, sender, sendResponse) {
             });
         })
         return true;
+    }
+
+    if(request.type === 'error_check'){
+        sendResponse(error);
     }
 
     if (request.type === 'send') {
@@ -62,136 +66,128 @@ function redditListener(request, sender, sendResponse) {
 
 function initConnection() {
     if ("WebSocket" in window) {
+        
+        getSessionKey(function(cookie){
 
-        // Build the query string for since_id an stream_id (reconnect)
-        chrome.storage.local.get('highest_since_id', function(resumeItem) {
-            chrome.storage.local.get('stream_id', function(streamItem) {
-                buildSocketQueryString(resumeItem.highest_since_id, streamItem.stream_id, function(qs) {
+            if(!cookie){
+                authenticationFailure();
+            } else {
+                var sessionKey = cookie.value;
+            }            
 
-                    var rws = new WebSocket("wss://www.irccloud.com/?" + qs);
+            // Build the query string for since_id an stream_id (reconnect)
+            chrome.storage.local.get('highest_since_id', function(resumeItem) {
+                chrome.storage.local.get('stream_id', function(streamItem) {
+                    buildSocketQueryString(resumeItem.highest_since_id, streamItem.stream_id, function(qs) {
 
-                    rws.onopen = function() {
-                        ws = rws;                        
-                        console.debug('connection opened.');
-                    };
+                        var rws = new WebSocket("wss://api.irccloud.com/?" + qs);
 
-                    rws.onmessage = function(evt) {
-                        console.log(evt)
+                        rws.onopen = function() {
+                            ws = rws;                        
+                            console.debug('connection opened.');
+                            ws.send(JSON.stringify({_method: "auth", cookie: sessionKey}));
+                        };
 
-                        var cloudEvent = JSON.parse(evt.data);
-                        if (cloudEvent.success === false && cloudEvent.message === "auth") {
-                            // TODO: change the button icon, and then have the user login again
-                            chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
-                            alert('1: ' + connectionError);
-                        } else {
-                            chrome.browserAction.setIcon({path:"./images/share/blue/16_share.png"});
-                        }
+                        rws.onmessage = function(evt) {
 
-                        if (cloudEvent.eid && cloudEvent.eid > 0) {
-                            chrome.storage.local.set({
-                                'highest_since_id': cloudEvent.eid
-                            });
-                        }
+                            var cloudEvent = JSON.parse(evt.data);
 
-                        switch (cloudEvent.type) {
-                            case 'header':
+                            if(cloudEvent.message === 'set_shard'){
+                                var newPath = cloudEvent.host + cloudEvent.websocket_path + qs;                                
+                                ws = new WebSocket(newPath);
+                            }
+
+                            if (cloudEvent.success === false && cloudEvent.message === "auth") {
+                                authenticationFailure();                         
+                            } else {
+                                chrome.browserAction.setIcon({path:"./images/share/blue/16_share.png"});
+                                error = '';
+                            }
+
+                            if (cloudEvent.eid && cloudEvent.eid > 0) {
                                 chrome.storage.local.set({
-                                    'stream_id': cloudEvent.streamid
+                                    'highest_since_id': cloudEvent.eid
                                 });
-                                if (cloudEvent.resumed) {
-                                    retryCount++;
-                                    console.debug('We missed ' + cloudEvent.accrued + ' events.');
-                                }
-                                break;
-                            case 'oob_include':
-                                var options = {
-                                    credentials: 'include'
-                                };
-                                fetch('https://www.irccloud.com' + cloudEvent.url, options)
-                                    .then(checkStatus)
-                                    .then(parseJSON)
-                                    .then(normalizeBacklog)
-                                    .then(function(friendlyData) {
-                                        console.log('Setting global list for the first time.');                                        
-                                        chrome.storage.local.set({
-                                            'conn_buff_list': friendlyData
-                                        });
-                                    })
-                                    .catch(function(error) {
-                                        console.error(error);
-                                    });
-                                break;
-                            case 'makeserver':
-                                // new connection
-                                // if channel, joined == false
-                                break;
-                            case 'makebuffer':
-                                // channels/PMs created
-                                break;
+                            }
 
-                            case 'delete_buffer':
-                                // channel, user, console deleted.
-                                chrome.storage.local.get('conn_buff_list', function(bufferHistory) {
-                                    _.each(bufferHistory, function(connection){
-                                        connection.buffers = connection.buffer.filter(function(buffer){
-                                            return (buffer.cid === cloudEvent.cid && buffer.bid === cloudEvent.bid);
-                                        });
-                                    });
+                            switch (cloudEvent.type) {
+                                case 'header':
                                     chrome.storage.local.set({
-                                        'conn_buff_list': newBufferList
+                                        'stream_id': cloudEvent.streamid
                                     });
-                                });
-                                break;
-
-                            case 'channel_init':
-                                // Loop through all buffers and set joined == true
-                               chrome.storage.local.get('conn_buff_list', function(bufferHistory) {
-                                    _.each(bufferHistory, function(connection){
-                                        connection.buffer.forEach(function(buffer){
-                                            if(buffer.cid === cloudEvent.cid && buffer.bid === cloudEvent.bid){
-                                                buffer.joined = true;
-                                            }
+                                    if (cloudEvent.resumed) {
+                                        console.debug('We missed ' + cloudEvent.accrued + ' events.');
+                                    }
+                                    break;
+                                case 'oob_include':
+                                    var options = {
+                                        credentials: 'include'
+                                    };
+                                    fetch('https://www.irccloud.com' + cloudEvent.url, options)
+                                        .then(checkStatus)
+                                        .then(parseJSON)
+                                        .then(normalizeBacklog)
+                                        .then(function(friendlyData) {
+                                            console.debug('Creating the initial buffer history list.');                                        
+                                            chrome.storage.local.set({
+                                                'conn_buff_list': friendlyData
+                                            }, function(){
+                                                console.debug('Buffer saved to disk.');
+                                            });
+                                        })
+                                        .catch(function(error) {
+                                            console.error(error);
                                         });
-                                    });
-                                    chrome.storage.local.set({
-                                        'conn_buff_list': newBufferList
-                                    });
-                                });
-                                break;
-                            case 'you_parted_channel':
-                                break;
-                            case 'you_kicked_channel':
-                                break;
+                                    break;
+                                case 'delete_buffer':
+                                    // channel, user, console deleted.
+                                    removeHistoryItem(cloudEvent.bid, cloudEvent.cid);
+                                    break;
+                                case 'you_parted_channel':
+                                    historyItemJoinedStatus(cloudEvent.bid, cloudEvent.cid, false);
+                                    break;
+                                case 'you_kicked_channel':
+                                    historyItemJoinedStatus(cloudEvent.bid, cloudEvent.cid, false);
+                                    break;
+                                case 'you_joined_channel':
+                                    historyItemJoinedStatus(cloudEvent.bid, cloudEvent.cid, true);
+                                    break;                                
+                                case 'status_changed':
+                                    updateServerStatus(cloudEvent.cid, cloudEvent.new_status);
+                                    break;
+                                case 'makeserver':
+                                    // User added a server
+                                    break;
+                                case 'server_details_changed':
+                                    // User changed the name of a server
+                                    break;
+                            }
 
-                            case 'status_changed':                                                      
-                                if (cloudEvent.new_status === 'connected') {
-                                    // Add server to backlog cache
-                                }
-                                if (cloudEvent.new_status === 'disconnected') {
-                                    // Remove server from backlog cache
-                                }
-                                break;
-                        }
+                        };
 
-                    };
+                        rws.onclose = function(evt) {                            
+                            console.error(evt);
+                            // websocket is closed.  
+                            retryCount++;          
+                            var warnMsg = 'CLOSED. Attempt: ' + retryCount + ' retrying in ' + ((2000 * (retryCount * 2)) / 1000) + ' seconds.';
+                            console.warn(warnMsg);
+                            error = warnMsg;
+                            if (retryCount < retryMax) {
+                                setTimeout(function() {
+                                    initConnection();
+                                }, (2000 * (retryCount * 2)));
+                            } else {
+                                chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
+                                console.debug('Max retry count reached. Unable to connect to IRCCloud');
+                            }
+                        };
 
-                    rws.onclose = function(evt) {
-                        // websocket is closed.            
-                        console.warn('CLOSED. Count: ' + retryCount + ' retrying in ' + ((2000 * (retryCount * 2)) / 1000) + ' seconds.');
-                        if (retryCount !== retryMax) {
-                            setTimeout(function() {
-                                initConnection();
-                            }, 2000 * (retryCount * 2));
-                        } else {
-                            chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
-                            console.debug('Max retry count reached. Unable to connect to IRCCloud');
-                        }
-                    };
-
-                    rws.onerror = function(evt) {
-                        chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});                        
-                        console.error(evt);
-                    };
+                        rws.onerror = function(evt) {
+                            chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});                            
+                            error = evt;
+                            console.error(evt);
+                        };
+                    });
                 });
             });
         });
@@ -201,77 +197,8 @@ function initConnection() {
     }
 }
 
-function normalizeBacklog(backlogData) {    
-    var response = {};
-    backlogData.forEach(function(currentValue, index, array) {
-        if (currentValue.type === "makeserver") {
-            response[currentValue.cid] = {
-                name: currentValue.name,
-                order: currentValue.order,
-                status: currentValue.status,
-                buffers: []
-            };
-        }
-        if (currentValue.type === "makebuffer") {
-            if (currentValue.buffer_type !== 'console') {
-                var newBuffer = {
-                    name: currentValue.name,
-                    bid: currentValue.bid,
-                    archived: currentValue.archived,
-                    buffer_type: currentValue.buffer_type                    
-                };
-
-                if(currentValue.buffer_type === 'channel'){                    
-                    newBuffer.joined = false;
-                }
-
-                response[currentValue.cid].buffers.push(newBuffer);
-            }
-        }
-    });
-    for (cid in response) {
-        response[cid].buffers = _.sortBy(response[cid].buffers, function(o) {
-            return o.name;
-        });
-    }
-    console.log(response);
-    return response;
-}
-
-function buildSocketQueryString(highestSinceId, streamId, cb) {
-    chrome.storage.local.get('conn_buff_list', function(bufferHistory) {
-
-        // If we lose our global list, we re-fetch full buffe
-        if (!bufferHistory.conn_buff_list) {
-            console.debug('Buffer history missing; refretching full buffer.');
-            cb('');
-        }
-
-        var qs = "";
-        if (highestSinceId) {
-            qs += 'since_id=' + highestSinceId;
-        }
-        if (streamId) {
-            if (highestSinceId) {
-                qs += '&';
-            }
-            qs += 'stream_id=' + streamId;
-        }
-
-        cb(qs);
-    });
-}
-
-function checkStatus(response) {
-    if (response.status >= 200 && response.status < 300) {
-        return response;
-    } else {
-        var error = new Error(response.statusText);
-        error.response = response;
-        throw error;
-    }
-}
-
-function parseJSON(response) {
-    return response.json()
-}
+function authenticationFailure(){
+    console.error('Authentication failure.');
+    chrome.browserAction.setIcon({path:"./images/share/red/16_share.png"});
+    error = connectionError;   
+};
